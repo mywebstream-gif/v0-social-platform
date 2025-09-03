@@ -19,9 +19,6 @@ export default function ConnectionsPage() {
             </span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
-            <Link href="/discover" className="text-muted-foreground hover:text-foreground transition-colors">
-              Discover
-            </Link>
             <Link href="/matches" className="text-muted-foreground hover:text-foreground transition-colors">
               Matches
             </Link>

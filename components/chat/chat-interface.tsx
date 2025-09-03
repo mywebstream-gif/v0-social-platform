@@ -1,87 +1,34 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Send, Smile, Paperclip, Brain } from "lucide-react"
+import { Send, Smile, Paperclip, Brain, Loader2 } from "lucide-react"
 
 interface Message {
   id: string
-  type: "user" | "other" | "ai-suggestion" | "system"
   content: string
-  timestamp: string
-  isRead?: boolean
-  sender?: string
+  message_type: "text" | "ai_suggestion" | "system"
+  sender_id: string
+  created_at: string
+  ai_analysis?: any
 }
-
-// Mock messages data
-const MOCK_MESSAGES: Message[] = [
-  {
-    id: "1",
-    type: "system",
-    content: "You matched with Sarah! Your AI coach suggests starting with a friendly greeting about her interests.",
-    timestamp: "2 days ago",
-  },
-  {
-    id: "2",
-    type: "user",
-    content: "Hi Sarah! I noticed you're into photography. That sunset shot on your profile is absolutely stunning!",
-    timestamp: "2 days ago",
-  },
-  {
-    id: "3",
-    type: "other",
-    content:
-      "Thank you so much! I actually took that during a weekend trip to Half Moon Bay. Do you enjoy photography too?",
-    timestamp: "2 days ago",
-    isRead: true,
-    sender: "Sarah",
-  },
-  {
-    id: "4",
-    type: "ai-suggestion",
-    content:
-      "Great opening! Consider sharing a specific photography experience or asking about her favorite photography spots.",
-    timestamp: "2 days ago",
-  },
-  {
-    id: "5",
-    type: "user",
-    content:
-      "I'm more of an amateur, but I love capturing moments during my hikes. Half Moon Bay sounds amazing - I've been wanting to explore more of the coast for photography!",
-    timestamp: "2 days ago",
-  },
-  {
-    id: "6",
-    type: "other",
-    content:
-      "That's so cool! Hiking photography can be really rewarding. Have you been to any good spots around the Bay Area?",
-    timestamp: "1 day ago",
-    isRead: true,
-    sender: "Sarah",
-  },
-  {
-    id: "7",
-    type: "other",
-    content: "Thanks for the coffee recommendation! The place you mentioned has amazing pastries too 😊",
-    timestamp: "2 min ago",
-    isRead: false,
-    sender: "Sarah",
-  },
-]
 
 interface ChatInterfaceProps {
   chatId: string
 }
 
 export function ChatInterface({ chatId }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
+  const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [error, setError] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -92,32 +39,89 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     scrollToBottom()
   }, [messages])
 
-  const handleSendMessage = () => {
-    if (!newMessage.trim()) return
+  useEffect(() => {
+    fetchMessages()
+  }, [chatId])
 
-    const message: Message = {
-      id: Date.now().toString(),
-      type: "user",
-      content: newMessage,
-      timestamp: "now",
-    }
+  const fetchMessages = async () => {
+    try {
+      const supabase = createClient()
 
-    setMessages((prev) => [...prev, message])
-    setNewMessage("")
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
 
-    // Simulate typing indicator
-    setIsTyping(true)
-    setTimeout(() => {
-      setIsTyping(false)
-      // Add AI suggestion after user message
-      const aiSuggestion: Message = {
-        id: (Date.now() + 1).toString(),
-        type: "ai-suggestion",
-        content: "Great message! Consider asking a follow-up question to keep the conversation flowing naturally.",
-        timestamp: "now",
+      if (userError || !user) {
+        throw new Error("Please log in to view messages")
       }
-      setMessages((prev) => [...prev, aiSuggestion])
-    }, 2000)
+
+      setCurrentUserId(user.id)
+
+      const { data: messagesData, error: messagesError } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("connection_id", chatId)
+        .order("created_at", { ascending: true })
+
+      if (messagesError) {
+        throw messagesError
+      }
+
+      setMessages(messagesData || [])
+    } catch (err: any) {
+      console.error("[v0] Error fetching messages:", err)
+      setError(err.message || "Failed to load messages")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !currentUserId) return
+
+    try {
+      const supabase = createClient()
+
+      const { data, error } = await supabase
+        .from("messages")
+        .insert({
+          connection_id: chatId,
+          sender_id: currentUserId,
+          content: newMessage,
+          message_type: "text",
+        })
+        .select()
+        .single()
+
+      if (error) {
+        throw error
+      }
+
+      setMessages((prev) => [...prev, data])
+      setNewMessage("")
+
+      await supabase.from("connections").update({ last_interaction: new Date().toISOString() }).eq("id", chatId)
+
+      // Simulate AI suggestion after user message
+      setTimeout(async () => {
+        const aiSuggestion = {
+          connection_id: chatId,
+          sender_id: currentUserId,
+          content: "Great message! Consider asking a follow-up question to keep the conversation flowing naturally.",
+          message_type: "ai_suggestion" as const,
+        }
+
+        const { data: aiData } = await supabase.from("messages").insert(aiSuggestion).select().single()
+
+        if (aiData) {
+          setMessages((prev) => [...prev, aiData])
+        }
+      }, 2000)
+    } catch (err: any) {
+      console.error("[v0] Error sending message:", err)
+      setError("Failed to send message")
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -128,7 +132,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   }
 
   const MessageBubble = ({ message }: { message: Message }) => {
-    if (message.type === "system") {
+    if (message.message_type === "system") {
       return (
         <div className="flex justify-center my-4">
           <Badge variant="secondary" className="px-3 py-1">
@@ -138,7 +142,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       )
     }
 
-    if (message.type === "ai-suggestion") {
+    if (message.message_type === "ai_suggestion") {
       return (
         <div className="flex justify-center my-4">
           <Card className="max-w-md border-accent/20 bg-gradient-to-r from-accent/5 to-primary/5">
@@ -156,7 +160,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       )
     }
 
-    const isUser = message.type === "user"
+    const isUser = message.sender_id === currentUserId
     return (
       <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
         <div className={`max-w-xs lg:max-w-md ${isUser ? "order-2" : "order-1"}`}>
@@ -170,8 +174,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
               isUser ? "justify-end" : "justify-start"
             }`}
           >
-            <span>{message.timestamp}</span>
-            {isUser && message.isRead !== false && (
+            <span>{new Date(message.created_at).toLocaleTimeString()}</span>
+            {isUser && (
               <div className="flex">
                 <div className="w-1 h-1 bg-accent rounded-full mr-0.5" />
                 <div className="w-1 h-1 bg-accent rounded-full" />
@@ -181,13 +185,26 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         </div>
         {!isUser && (
           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center ml-2 order-2">
-            <img
-              src="/ai-generated-portrait-of-a-creative-woman-with-wa.jpg"
-              alt="Sarah"
-              className="w-8 h-8 rounded-full object-cover"
-            />
+            <img src="/ai-portrait.jpg" alt="Contact" className="w-8 h-8 rounded-full object-cover" />
           </div>
         )}
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        <span>Loading messages...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        <p>{error}</p>
       </div>
     )
   }
@@ -205,11 +222,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
           <div className="flex justify-start mb-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                <img
-                  src="/ai-generated-portrait-of-a-creative-woman-with-wa.jpg"
-                  alt="Sarah"
-                  className="w-8 h-8 rounded-full object-cover"
-                />
+                <img src="/ai-portrait.jpg" alt="Contact" className="w-8 h-8 rounded-full object-cover" />
               </div>
               <div className="bg-muted px-4 py-2 rounded-2xl">
                 <div className="flex space-x-1">

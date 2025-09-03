@@ -19,6 +19,20 @@ export default function ProfilePage() {
               ConnectAI
             </span>
           </Link>
+          <nav className="hidden md:flex items-center gap-6">
+            <Link href="/matches" className="text-muted-foreground hover:text-foreground transition-colors">
+              Matches
+            </Link>
+            <Link href="/chat" className="text-muted-foreground hover:text-foreground transition-colors">
+              Chat
+            </Link>
+            <Link href="/connections" className="text-muted-foreground hover:text-foreground transition-colors">
+              Connections
+            </Link>
+            <Link href="/profile" className="text-foreground font-medium">
+              Profile
+            </Link>
+          </nav>
           <div className="flex items-center gap-3">
             <Link href="/profile/edit">
               <Button variant="outline" size="sm">

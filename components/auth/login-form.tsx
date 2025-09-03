@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -39,20 +40,24 @@ export function LoginForm() {
     }
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const supabase = createClient()
 
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          email: formData.email,
-          isAuthenticated: true,
-          loginTime: new Date().toISOString(),
-        }),
-      )
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      })
 
-      router.push("/discover")
-    } catch (err) {
-      setError("Invalid email or password. Please try again.")
+      if (authError) {
+        throw authError
+      }
+
+      console.log("[v0] Login successful:", data.user?.email)
+
+      // Navigate to connections page
+      router.push("/connections")
+    } catch (err: any) {
+      console.error("[v0] Login error:", err)
+      setError(err.message || "Invalid email or password. Please try again.")
     } finally {
       setIsLoading(false)
     }

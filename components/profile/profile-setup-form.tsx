@@ -1,8 +1,9 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowRight, X } from "lucide-react"
+import { ArrowRight, X, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 const INTERESTS = [
   "Technology",
@@ -47,6 +49,9 @@ const RELATIONSHIP_GOALS = [
 ]
 
 export function ProfileSetupForm() {
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
   const [formData, setFormData] = useState({
     bio: "",
     occupation: "",
@@ -65,10 +70,51 @@ export function ProfileSetupForm() {
     },
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("[v0] Profile setup submitted:", formData)
-    // Navigate to next step (AI portrait generation)
+    setIsLoading(true)
+    setError("")
+
+    try {
+      const supabase = createClient()
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        throw new Error("Please log in to continue")
+      }
+
+      // Update profile with additional information
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          bio: formData.bio,
+          occupation: formData.occupation,
+          education: formData.education,
+          interests: formData.interests,
+          relationship_goals: formData.relationshipGoals.join(","),
+          profile_completeness: 75, // Update completeness score
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      console.log("[v0] Profile setup completed for user:", user.id)
+
+      // Navigate to AI portrait generation
+      router.push("/profile/portrait")
+    } catch (err: any) {
+      console.error("[v0] Profile setup error:", err)
+      setError(err.message || "Failed to save profile. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const toggleInterest = (interest: string) => {
@@ -91,6 +137,13 @@ export function ProfileSetupForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       {/* Bio */}
       <div className="space-y-2">
         <Label htmlFor="bio">About You</Label>
@@ -300,10 +353,10 @@ export function ProfileSetupForm() {
       <Button
         type="submit"
         className="w-full ai-glow"
-        disabled={formData.interests.length === 0 || formData.relationshipGoals.length === 0}
+        disabled={formData.interests.length === 0 || formData.relationshipGoals.length === 0 || isLoading}
       >
-        Continue to AI Portrait Generation
-        <ArrowRight className="w-4 h-4 ml-2" />
+        {isLoading ? "Saving Profile..." : "Continue to AI Portrait Generation"}
+        {!isLoading && <ArrowRight className="w-4 h-4 ml-2" />}
       </Button>
     </form>
   )

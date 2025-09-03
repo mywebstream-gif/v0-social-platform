@@ -1,81 +1,93 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MessageCircle, Calendar, TrendingUp, Brain, Sparkles, Clock, CheckCircle, ArrowRight } from "lucide-react"
+import {
+  MessageCircle,
+  Calendar,
+  TrendingUp,
+  Brain,
+  Sparkles,
+  Clock,
+  CheckCircle,
+  ArrowRight,
+  Loader2,
+} from "lucide-react"
 import Link from "next/link"
 
-// Mock connections data
-const CONNECTIONS_DATA = [
-  {
-    id: "1",
-    name: "Sarah Chen",
-    age: 26,
-    aiPortrait: "/ai-generated-portrait-of-a-creative-woman-with-wa.jpg",
-    connectionType: "dating",
-    currentStage: "communication",
-    stageProgress: 75,
-    compatibilityScore: 94,
-    connectedAt: "5 days ago",
-    lastInteraction: "2 hours ago",
-    nextMilestone: "Suggest meeting in person",
-    aiRecommendation: "Strong connection established. Consider planning a coffee date.",
-    milestones: [
-      { stage: "handshake", completed: true, completedAt: "4 days ago" },
-      { stage: "communication", completed: false, progress: 75 },
-      { stage: "face2face", completed: false, progress: 0 },
-    ],
-    sharedInterests: ["Photography", "Coffee", "Travel"],
-  },
-  {
-    id: "2",
-    name: "Marcus Johnson",
-    age: 29,
-    aiPortrait: "/ai-generated-portrait-of-a-friendly-tech-profess.jpg",
-    connectionType: "friendship",
-    currentStage: "handshake",
-    stageProgress: 60,
-    compatibilityScore: 87,
-    connectedAt: "3 days ago",
-    lastInteraction: "1 day ago",
-    nextMilestone: "Share more personal interests",
-    aiRecommendation: "Good initial connection. Ask about his tech projects to deepen bond.",
-    milestones: [
-      { stage: "handshake", completed: false, progress: 60 },
-      { stage: "communication", completed: false, progress: 0 },
-      { stage: "face2face", completed: false, progress: 0 },
-    ],
-    sharedInterests: ["Technology", "Hiking", "Music"],
-  },
-  {
-    id: "3",
-    name: "Emma Rodriguez",
-    age: 24,
-    aiPortrait: "/ai-generated-portrait-of-a-young-professional-wo.jpg",
-    connectionType: "social",
-    currentStage: "face2face",
-    stageProgress: 90,
-    compatibilityScore: 91,
-    connectedAt: "1 week ago",
-    lastInteraction: "3 hours ago",
-    nextMilestone: "Plan group activity",
-    aiRecommendation: "Ready for in-person meetup. Suggest book club or social event.",
-    milestones: [
-      { stage: "handshake", completed: true, completedAt: "6 days ago" },
-      { stage: "communication", completed: true, completedAt: "2 days ago" },
-      { stage: "face2face", completed: false, progress: 90 },
-    ],
-    sharedInterests: ["Reading", "Volunteering", "Art"],
-  },
-]
+interface Connection {
+  id: string
+  user1_id: string
+  user2_id: string
+  connection_stage: string
+  connection_type: string
+  progress_score: number
+  last_interaction: string
+  milestones: any[]
+  ai_insights: any
+  created_at: string
+  profiles: {
+    id: string
+    display_name: string
+    ai_portrait_url: string
+    interests: string[]
+  }
+}
 
 export function ConnectionDashboard() {
   const [activeTab, setActiveTab] = useState("all")
-  const [selectedConnection, setSelectedConnection] = useState<string | null>(null)
+  const [connections, setConnections] = useState<Connection[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    fetchConnections()
+  }, [])
+
+  const fetchConnections = async () => {
+    try {
+      const supabase = createClient()
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        throw new Error("Please log in to view connections")
+      }
+
+      const { data: connectionsData, error: connectionsError } = await supabase
+        .from("connections")
+        .select(`
+          *,
+          profiles!connections_user2_id_fkey (
+            id,
+            display_name,
+            ai_portrait_url,
+            interests
+          )
+        `)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .order("last_interaction", { ascending: false })
+
+      if (connectionsError) {
+        throw connectionsError
+      }
+
+      setConnections(connectionsData || [])
+    } catch (err: any) {
+      console.error("[v0] Error fetching connections:", err)
+      setError(err.message || "Failed to load connections")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const getStageColor = (stage: string) => {
     switch (stage) {
@@ -118,126 +130,157 @@ export function ConnectionDashboard() {
     }
   }
 
-  const filteredConnections = CONNECTIONS_DATA.filter((connection) => {
+  const filteredConnections = connections.filter((connection) => {
     if (activeTab === "all") return true
-    return connection.currentStage === activeTab
+    return connection.connection_stage === activeTab
   })
 
-  const ConnectionCard = ({ connection }: { connection: any }) => (
-    <Card className="border-border/50 hover:border-accent/50 transition-colors">
-      <CardContent className="p-6">
-        <div className="flex items-start gap-4">
-          <div className="relative">
-            <img
-              src={connection.aiPortrait || "/placeholder.svg"}
-              alt={`${connection.name}'s portrait`}
-              className="w-16 h-16 rounded-full object-cover"
-            />
-            <Badge className="absolute -top-1 -right-1 bg-accent/90 text-white text-xs px-1">
-              <Sparkles className="w-2 h-2" />
-            </Badge>
-          </div>
+  const ConnectionCard = ({ connection }: { connection: Connection }) => {
+    const profile = connection.profiles
+    const sharedInterests = profile.interests?.slice(0, 3) || []
+    const aiInsights = connection.ai_insights || {}
 
-          <div className="flex-1 space-y-3">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-lg">
-                  {connection.name}, {connection.age}
-                </h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge className={getConnectionTypeColor(connection.connectionType)}>
-                    {connection.connectionType}
-                  </Badge>
-                  <Badge className="bg-background text-foreground border">
-                    <Brain className="w-3 h-3 mr-1" />
-                    {connection.compatibilityScore}%
-                  </Badge>
-                </div>
-              </div>
-              <Badge className={getStageColor(connection.currentStage)}>{getStageLabel(connection.currentStage)}</Badge>
+    return (
+      <Card className="border-border/50 hover:border-accent/50 transition-colors">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="relative">
+              <img
+                src={profile.ai_portrait_url || "/placeholder.svg?height=64&width=64&query=AI+portrait"}
+                alt={`${profile.display_name}'s portrait`}
+                className="w-16 h-16 rounded-full object-cover"
+              />
+              <Badge className="absolute -top-1 -right-1 bg-accent/90 text-white text-xs px-1">
+                <Sparkles className="w-2 h-2" />
+              </Badge>
             </div>
 
-            {/* Progress */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>Stage Progress</span>
-                <span className="font-medium">{connection.stageProgress}%</span>
-              </div>
-              <Progress value={connection.stageProgress} className="h-2" />
-            </div>
-
-            {/* Milestones */}
-            <div className="flex items-center gap-4">
-              {connection.milestones.map((milestone: any, index: number) => (
-                <div key={milestone.stage} className="flex items-center gap-2">
-                  {milestone.completed ? (
-                    <CheckCircle className="w-4 h-4 text-[color:var(--success)]" />
-                  ) : (
-                    <div
-                      className={`w-4 h-4 rounded-full border-2 ${
-                        milestone.progress > 0 ? "border-accent bg-accent/20" : "border-muted-foreground"
-                      }`}
-                    />
-                  )}
-                  <span className="text-xs text-muted-foreground capitalize">{getStageLabel(milestone.stage)}</span>
-                  {index < connection.milestones.length - 1 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
-                </div>
-              ))}
-            </div>
-
-            {/* AI Recommendation */}
-            <div className="bg-gradient-to-r from-accent/5 to-primary/5 rounded-lg p-3 border border-accent/20">
-              <div className="flex items-start gap-2">
-                <Brain className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
+            <div className="flex-1 space-y-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-accent mb-1">Next Step: {connection.nextMilestone}</p>
-                  <p className="text-xs text-muted-foreground">{connection.aiRecommendation}</p>
+                  <h3 className="font-semibold text-lg">{profile.display_name}</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge className={getConnectionTypeColor(connection.connection_type)}>
+                      {connection.connection_type}
+                    </Badge>
+                    <Badge className="bg-background text-foreground border">
+                      <Brain className="w-3 h-3 mr-1" />
+                      {aiInsights.compatibility_score || 85}%
+                    </Badge>
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Shared Interests */}
-            <div className="flex flex-wrap gap-1">
-              {connection.sharedInterests.map((interest: string) => (
-                <Badge key={interest} variant="secondary" className="text-xs">
-                  {interest}
+                <Badge className={getStageColor(connection.connection_stage)}>
+                  {getStageLabel(connection.connection_stage)}
                 </Badge>
-              ))}
-            </div>
+              </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  <span>Connected {connection.connectedAt}</span>
+              {/* Progress */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span>Stage Progress</span>
+                  <span className="font-medium">{connection.progress_score}%</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <MessageCircle className="w-3 h-3" />
-                  <span>Last chat {connection.lastInteraction}</span>
+                <Progress value={connection.progress_score} className="h-2" />
+              </div>
+
+              {/* Milestones */}
+              <div className="flex items-center gap-4">
+                {["handshake", "communication", "face2face"].map((stage, index) => (
+                  <div key={stage} className="flex items-center gap-2">
+                    {connection.connection_stage === stage ||
+                    (stage === "handshake" && ["communication", "face2face"].includes(connection.connection_stage)) ||
+                    (stage === "communication" && connection.connection_stage === "face2face") ? (
+                      <CheckCircle className="w-4 h-4 text-[color:var(--success)]" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-muted-foreground" />
+                    )}
+                    <span className="text-xs text-muted-foreground capitalize">{getStageLabel(stage)}</span>
+                    {index < 2 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
+                  </div>
+                ))}
+              </div>
+
+              {/* AI Recommendation */}
+              <div className="bg-gradient-to-r from-accent/5 to-primary/5 rounded-lg p-3 border border-accent/20">
+                <div className="flex items-start gap-2">
+                  <Brain className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium text-accent mb-1">
+                      Next Step: {aiInsights.next_milestone || "Continue building connection"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {aiInsights.recommendation ||
+                        "Keep engaging in meaningful conversations to strengthen your bond."}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Link href={`/chat/${connection.id}`}>
-                  <Button size="sm" variant="outline" className="bg-transparent">
-                    <MessageCircle className="w-4 h-4 mr-2" />
-                    Chat
-                  </Button>
-                </Link>
-                <Link href={`/connections/${connection.id}`}>
-                  <Button size="sm" className="ai-glow">
-                    <TrendingUp className="w-4 h-4 mr-2" />
-                    View Progress
-                  </Button>
-                </Link>
+
+              {/* Shared Interests */}
+              {sharedInterests.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {sharedInterests.map((interest: string) => (
+                    <Badge key={interest} variant="secondary" className="text-xs">
+                      {interest}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Connected {new Date(connection.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <MessageCircle className="w-3 h-3" />
+                    <span>Last chat {new Date(connection.last_interaction).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href={`/chat/${connection.id}`}>
+                    <Button size="sm" variant="outline" className="bg-transparent">
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Chat
+                    </Button>
+                  </Link>
+                  <Link href={`/connections/${connection.id}`}>
+                    <Button size="sm" className="ai-glow">
+                      <TrendingUp className="w-4 h-4 mr-2" />
+                      View Progress
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        <span>Loading connections...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <p>{error}</p>
+        <Button variant="outline" onClick={fetchConnections} className="mt-4 bg-transparent">
+          Try Again
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

@@ -18,14 +18,14 @@ export default function ChatPage() {
             </span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
-            <Link href="/discover" className="text-muted-foreground hover:text-foreground transition-colors">
-              Discover
-            </Link>
             <Link href="/matches" className="text-muted-foreground hover:text-foreground transition-colors">
               Matches
             </Link>
             <Link href="/chat" className="text-foreground font-medium">
               Chat
+            </Link>
+            <Link href="/connections" className="text-muted-foreground hover:text-foreground transition-colors">
+              Connections
             </Link>
             <Link href="/profile" className="text-muted-foreground hover:text-foreground transition-colors">
               Profile

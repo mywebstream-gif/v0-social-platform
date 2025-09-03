@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -68,7 +69,7 @@ export function SignupForm() {
 
     // Phone validation
     const phoneRegex = /^[+]?[1-9][\d]{0,15}$/
-    if (!phoneRegex.test(formData.phone.replace(/[\s\-$$$$]/g, ""))) {
+    if (!phoneRegex.test(formData.phone.replace(/[\s\-()]/g, ""))) {
       newErrors.phone = "Please enter a valid phone number"
     }
 
@@ -87,23 +88,35 @@ export function SignupForm() {
     console.log("[v0] Signup form submitted:", formData)
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const supabase = createClient()
 
-      // Store user data in localStorage for demo purposes
-      localStorage.setItem(
-        "userData",
-        JSON.stringify({
-          ...formData,
-          id: Date.now(),
-          createdAt: new Date().toISOString(),
-        }),
-      )
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          emailRedirectTo:
+            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/profile/setup`,
+          data: {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            display_name: `${formData.firstName} ${formData.lastName}`,
+            date_of_birth: formData.dateOfBirth,
+            gender: formData.gender,
+            location: formData.location,
+            phone_number: formData.phone,
+          },
+        },
+      })
 
-      // Navigate to profile setup
-      router.push("/profile/setup")
-    } catch (error) {
-      setErrors({ submit: "Failed to create account. Please try again." })
+      if (error) {
+        throw error
+      }
+
+      // Navigate to email confirmation page
+      router.push("/auth/check-email")
+    } catch (error: any) {
+      console.error("[v0] Signup error:", error)
+      setErrors({ submit: error.message || "Failed to create account. Please try again." })
     } finally {
       setIsLoading(false)
     }
