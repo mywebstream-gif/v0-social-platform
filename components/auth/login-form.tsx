@@ -40,18 +40,45 @@ export function LoginForm() {
     }
 
     try {
-      const supabase = createClient()
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      })
+      if (supabaseUrl && supabaseKey) {
+        // Use real Supabase authentication
+        const supabase = createClient()
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        })
 
-      if (authError) {
-        throw authError
+        if (authError) {
+          throw authError
+        }
+
+        console.log("[v0] Login successful:", data.user?.email)
+      } else {
+        console.log("[v0] Using mock authentication - Supabase not configured")
+
+        // Simulate authentication delay
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+
+        // Mock validation - accept any email/password for demo
+        if (formData.email && formData.password) {
+          console.log("[v0] Mock login successful:", formData.email)
+
+          // Store mock user session
+          localStorage.setItem(
+            "mockUser",
+            JSON.stringify({
+              email: formData.email,
+              id: "mock-user-id",
+              loginTime: new Date().toISOString(),
+            }),
+          )
+        } else {
+          throw new Error("Invalid credentials")
+        }
       }
-
-      console.log("[v0] Login successful:", data.user?.email)
 
       // Navigate to connections page
       router.push("/connections")

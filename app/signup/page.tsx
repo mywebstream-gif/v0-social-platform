@@ -63,9 +63,9 @@ export default function SignupPage() {
           </CardHeader>
           <CardContent>
             <SignupForm />
-            <div className="mt-6 text-center text-sm text-muted-foreground">
+            <div className="mt-6 text-center text-sm text-foreground">
               Already have an account?{" "}
-              <Link href="/login" className="text-accent hover:underline">
+              <Link href="/login" className="text-primary hover:text-primary/80 hover:underline font-medium">
                 Sign in
               </Link>
             </div>
